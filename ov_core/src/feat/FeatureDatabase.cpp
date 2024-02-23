@@ -56,11 +56,13 @@ bool FeatureDatabase::get_feature_clone(size_t id, Feature &feat) {
   return true;
 }
 
-void FeatureDatabase::update_feature(size_t id, double timestamp, size_t cam_id, float u, float v, float u_n, float v_n) {
-
-  // Find this feature using the ID lookup
+void FeatureDatabase::update_feature(size_t id, double timestamp, size_t cam_id, float u, float v, float u_n, float v_n) 
+{
+  //* Find this feature using the ID lookup
   std::lock_guard<std::mutex> lck(mtx);
-  if (features_idlookup.find(id) != features_idlookup.end()) {
+
+  if (features_idlookup.find(id) != features_idlookup.end()) 
+  {
     // Get our feature
     std::shared_ptr<Feature> feat = features_idlookup.at(id);
     // Append this new information to it!
@@ -73,7 +75,7 @@ void FeatureDatabase::update_feature(size_t id, double timestamp, size_t cam_id,
   // Debug info
   // PRINT_DEBUG("featdb - adding new feature %d",(int)id);
 
-  // Else we have not found the feature, so lets make it be a new one!
+  //* Else we have not found the feature, so lets make it be a new one!
   std::shared_ptr<Feature> feat = std::make_shared<Feature>();
   feat->featid = id;
   feat->uvs[cam_id].push_back(Eigen::Vector2f(u, v));
@@ -83,6 +85,8 @@ void FeatureDatabase::update_feature(size_t id, double timestamp, size_t cam_id,
   // Append this new feature into our database
   features_idlookup[id] = feat;
 }
+
+
 
 std::vector<std::shared_ptr<Feature>> FeatureDatabase::features_not_containing_newer(double timestamp, bool remove, bool skip_deleted) {
 

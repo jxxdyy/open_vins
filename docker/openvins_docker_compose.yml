@@ -1,0 +1,26 @@
+version: '3.3'
+
+services:
+  openvins:
+    image: pjdragon/openvins
+    build:
+      context: ../
+      dockerfile: ./docker/Dockerfile_ros1_20_04   
+    tty: true
+    container_name: open-vins
+    stdin_open: true
+    privileged: true
+    runtime: nvidia
+    environment:
+      - DISPLAY=unix$DISPLAY
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - ROS_MASTER_URI=http://localhost:11311
+    volumes:
+      - ~/openvins_ws/src/open_vins/:/pjy_ws/catkin_ws/src/open_vins/
+      - ~/rosbag_data/:/pjy_ws/Dataset/
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    devices:
+      - /dev:/dev
+    ipc: host
+    network_mode: host
+    command: bash -c "/bin/bash"

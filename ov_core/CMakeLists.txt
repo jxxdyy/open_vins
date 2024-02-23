@@ -9,16 +9,29 @@ if (NOT OpenCV_FOUND)
     find_package(OpenCV 4 REQUIRED)
 endif ()
 find_package(Boost REQUIRED COMPONENTS system filesystem thread date_time)
-message(STATUS "OPENCV: " ${OpenCV_VERSION} " | BOOST: " ${Boost_VERSION})
+find_package(apriltag REQUIRED)
+
+message(STATUS "OPENCV: " ${OpenCV_VERSION} " | BOOST: " ${Boost_VERSION} " | APRILTAG: " ${apriltag_VERSION})
 
 # If we will compile with aruco support
-option(ENABLE_ARUCO_TAGS "Enable or disable aruco tag (disable if no contrib modules)" ON)
+option(ENABLE_ARUCO_TAGS "Enable or disable aruco tag (disable if no contrib modules)" OFF)
 if (NOT ENABLE_ARUCO_TAGS)
     add_definitions(-DENABLE_ARUCO_TAGS=0)
     message(WARNING "DISABLING ARUCOTAG TRACKING!")
 else ()
     add_definitions(-DENABLE_ARUCO_TAGS=1)
 endif ()
+
+
+# If we will compile with april support
+option(ENABLE_APRIL_TAGS "Enable or disable april tag (disable if no contrib modules)" ON)
+if (NOT ENABLE_APRIL_TAGS)
+    add_definitions(-DENABLE_APRIL_TAGS=0)
+    message(WARNING "DISABLING APRILTAG TRACKING!")
+else ()
+    add_definitions(-DENABLE_APRIL_TAGS=1)
+endif ()
+
 
 # check if we have our python libs files (will search for python3 then python2 installs)
 # sudo apt-get install python-matplotlib python-numpy python-dev

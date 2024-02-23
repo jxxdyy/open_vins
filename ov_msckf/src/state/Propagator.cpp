@@ -30,8 +30,10 @@ using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
 
-void Propagator::propagate_and_clone(std::shared_ptr<State> state, double timestamp) {
 
+
+void Propagator::propagate_and_clone(std::shared_ptr<State> state, double timestamp) 
+{
   // If the difference between the current update time and state is zero
   // We should crash, as this means we would have two clones at the same time!!!!
   if (state->_timestamp == timestamp) {
@@ -137,21 +139,28 @@ void Propagator::propagate_and_clone(std::shared_ptr<State> state, double timest
   StateHelper::augment_clone(state, last_w);
 }
 
+
+
 bool Propagator::fast_state_propagate(std::shared_ptr<State> state, double timestamp, Eigen::Matrix<double, 13, 1> &state_plus,
-                                      Eigen::Matrix<double, 12, 12> &covariance) {
+                                      Eigen::Matrix<double, 12, 12> &covariance) 
+{
+  //! [Input] : 현재 state, IMU timestamp, propagate될 state & covariance
 
   // First we will store the current calibration / estimates of the state
-  if (!cache_imu_valid) {
+  if (!cache_imu_valid) 
+  {
     cache_state_time = state->_timestamp;
     cache_state_est = state->_imu->value();
+    //* marginalization을 진행할  covariance를 가져옴
     cache_state_covariance = StateHelper::get_marginal_covariance(state, {state->_imu});
+    //* current cam2imu measurement 취득 시간 차이 (cam2imu time offset)
     cache_t_off = state->_calib_dt_CAMtoIMU->value()(0);
     cache_imu_valid = true;
   }
 
   // First lets construct an IMU vector of measurements we need
-  double time0 = cache_state_time + cache_t_off;
-  double time1 = timestamp + cache_t_off;
+  double time0 = cache_state_time + cache_t_off;    //* camera에 의해 state가 update 됐을 떄의 시점 + cam2imu data time offset
+  double time1 = timestamp + cache_t_off;           //* input imu data의 timestamp + cam2imu data time offset
   std::vector<ov_core::ImuData> prop_data;
   {
     std::lock_guard<std::mutex> lck(imu_data_mtx);
@@ -171,10 +180,11 @@ bool Propagator::fast_state_propagate(std::shared_ptr<State> state, double times
   Eigen::Matrix3d R_ACCtoIMU = state->_calib_imu_ACCtoIMU->Rot();
   Eigen::Matrix3d R_GYROtoIMU = state->_calib_imu_GYROtoIMU->Rot();
 
+
   // Loop through all IMU messages, and use them to move the state forward in time
   // This uses the zero'th order quat, and then constant acceleration discrete
-  for (size_t i = 0; i < prop_data.size() - 1; i++) {
-
+  for (size_t i = 0; i < prop_data.size() - 1; i++) 
+  {
     // Time elapsed over interval
     auto data_minus = prop_data.at(i);
     auto data_plus = prop_data.at(i + 1);
@@ -266,9 +276,11 @@ bool Propagator::fast_state_propagate(std::shared_ptr<State> state, double times
   return true;
 }
 
-std::vector<ov_core::ImuData> Propagator::select_imu_readings(const std::vector<ov_core::ImuData> &imu_data, double time0, double time1,
-                                                              bool warn) {
 
+
+std::vector<ov_core::ImuData> Propagator::select_imu_readings(const std::vector<ov_core::ImuData> &imu_data, double time0, double time1,
+                                                              bool warn)
+{
   // Our vector imu readings
   std::vector<ov_core::ImuData> prop_data;
 

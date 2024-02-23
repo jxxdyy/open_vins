@@ -28,16 +28,17 @@
 
 using namespace ov_core;
 
-void TrackAruco::feed_new_camera(const CameraData &message) {
-
-  // Error check that we have all the data
-  if (message.sensor_ids.empty() || message.sensor_ids.size() != message.images.size() || message.images.size() != message.masks.size()) {
-    PRINT_ERROR(RED "[ERROR]: MESSAGE DATA SIZES DO NOT MATCH OR EMPTY!!!\n" RESET);
-    PRINT_ERROR(RED "[ERROR]:   - message.sensor_ids.size() = %zu\n" RESET, message.sensor_ids.size());
-    PRINT_ERROR(RED "[ERROR]:   - message.images.size() = %zu\n" RESET, message.images.size());
-    PRINT_ERROR(RED "[ERROR]:   - message.masks.size() = %zu\n" RESET, message.masks.size());
-    std::exit(EXIT_FAILURE);
-  }
+void TrackAruco::feed_new_camera(const CameraData &message) 
+{
+    // Error check that we have all the data
+    if (message.sensor_ids.empty() || message.sensor_ids.size() != message.images.size() || message.images.size() != message.masks.size()) 
+    {
+        PRINT_ERROR(RED "[ERROR]: MESSAGE DATA SIZES DO NOT MATCH OR EMPTY!!!\n" RESET);
+        PRINT_ERROR(RED "[ERROR]:   - message.sensor_ids.size() = %zu\n" RESET, message.sensor_ids.size());
+        PRINT_ERROR(RED "[ERROR]:   - message.images.size() = %zu\n" RESET, message.images.size());
+        PRINT_ERROR(RED "[ERROR]:   - message.masks.size() = %zu\n" RESET, message.masks.size());
+        std::exit(EXIT_FAILURE);
+    }
 
   // There is not such thing as stereo tracking for aruco
   // Thus here we should just call the monocular version two times
@@ -54,26 +55,30 @@ void TrackAruco::feed_new_camera(const CameraData &message) {
 #endif
 }
 
+
+
 #if ENABLE_ARUCO_TAGS
 
-void TrackAruco::perform_tracking(double timestamp, const cv::Mat &imgin, size_t cam_id, const cv::Mat &maskin) {
-
+void TrackAruco::perform_tracking(double timestamp, const cv::Mat &imgin, size_t cam_id, const cv::Mat &maskin) 
+{
   // Start timing
   rT1 = boost::posix_time::microsec_clock::local_time();
 
   // Lock this data feed for this camera
   std::lock_guard<std::mutex> lck(mtx_feeds.at(cam_id));
 
-  // Histogram equalize
+  //* Histogram equalize
   cv::Mat img;
   if (histogram_method == HistogramMethod::HISTOGRAM) {
     cv::equalizeHist(imgin, img);
-  } else if (histogram_method == HistogramMethod::CLAHE) {
+  } 
+  else if (histogram_method == HistogramMethod::CLAHE) {
     double eq_clip_limit = 10.0;
     cv::Size eq_win_size = cv::Size(8, 8);
     cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(eq_clip_limit, eq_win_size);
     clahe->apply(imgin, img);
-  } else {
+  } 
+  else {
     img = imgin;
   }
 
@@ -82,18 +87,19 @@ void TrackAruco::perform_tracking(double timestamp, const cv::Mat &imgin, size_t
   corners[cam_id].clear();
   rejects[cam_id].clear();
 
-  // If we are downsizing, then downsize
+  //* If we are downsizing, then downsize
   cv::Mat img0;
   if (do_downsizing) {
     cv::pyrDown(img, img0, cv::Size(img.cols / 2, img.rows / 2));
-  } else {
+  } 
+  else {
     img0 = img;
   }
 
   //===================================================================================
   //===================================================================================
 
-  // Perform extraction
+  //* Perform extraction
 #if CV_MAJOR_VERSION > 4 || ( CV_MAJOR_VERSION == 4 && CV_MINOR_VERSION >= 7)
   aruco_detector.detectMarkers(img0, corners[cam_id], ids_aruco[cam_id], rejects[cam_id]);
 #else
@@ -104,6 +110,8 @@ void TrackAruco::perform_tracking(double timestamp, const cv::Mat &imgin, size_t
   //===================================================================================
   //===================================================================================
 
+
+  //* Corner pixel points restoration
   // If we downsized, scale all our u,v measurements by a factor of two
   // Note: we do this so we can use these results for visulization later
   // Note: and so that the uv added is in the same image size
@@ -125,30 +133,40 @@ void TrackAruco::perform_tracking(double timestamp, const cv::Mat &imgin, size_t
   //===================================================================================
   //===================================================================================
 
+
+  //* Append to our feature database this new information
   // ID vectors, of all currently tracked IDs
   std::vector<size_t> ids_new;
   std::vector<cv::KeyPoint> pts_new;
 
-  // Append to our feature database this new information
-  for (size_t i = 0; i < ids_aruco[cam_id].size(); i++) {
+  
+  for (size_t i = 0; i < ids_aruco[cam_id].size(); i++) 
+  {
     // Skip if ID is greater then our max
     if (ids_aruco[cam_id].at(i) > max_tag_id)
       continue;
+
     // Assert we have 4 points (we will only use one of them)
     assert(corners[cam_id].at(i).size() == 4);
-    for (int n = 0; n < 4; n++) {
+
+    for (int n = 0; n < 4; n++) 
+    {
       // Check if it is in the mask
       // NOTE: mask has max value of 255 (white) if it should be
       if (maskin.at<uint8_t>((int)corners[cam_id].at(i).at(n).y, (int)corners[cam_id].at(i).at(n).x) > 127)
         continue;
+
       // Try to undistort the point
       cv::Point2f npt_l = camera_calib.at(cam_id)->undistort_cv(corners[cam_id].at(i).at(n));
+
       // Append to the ids vector and database
       size_t tmp_id = (size_t)ids_aruco[cam_id].at(i) + n * max_tag_id;
       database->update_feature(tmp_id, timestamp, cam_id, corners[cam_id].at(i).at(n).x, corners[cam_id].at(i).at(n).y, npt_l.x, npt_l.y);
+
       // Append to active tracked point list
       cv::KeyPoint kpt;
       kpt.pt = corners[cam_id].at(i).at(n);
+
       ids_new.push_back(tmp_id);
       pts_new.push_back(kpt);
     }
@@ -170,6 +188,8 @@ void TrackAruco::perform_tracking(double timestamp, const cv::Mat &imgin, size_t
             (int)ids_new.size());
   PRINT_ALL("[TIME-ARUCO]: %.4f seconds for total\n", (rT3 - rT1).total_microseconds() * 1e-6);
 }
+
+
 
 void TrackAruco::display_active(cv::Mat &img_out, int r1, int g1, int b1, int r2, int g2, int b2, std::string overlay) {
 
@@ -211,18 +231,21 @@ void TrackAruco::display_active(cv::Mat &img_out, int r1, int g1, int b1, int r2
 
   // Loop through each image, and draw
   int index_cam = 0;
-  for (auto const &pair : img_last_cache) {
+  for (auto const &pair : img_last_cache) 
+  {
     // select the subset of the image
     cv::Mat img_temp;
     if (image_new)
       cv::cvtColor(img_last_cache[pair.first], img_temp, cv::COLOR_GRAY2RGB);
     else
       img_temp = img_out(cv::Rect(max_width * index_cam, 0, max_width, max_height));
+    
     // draw...
     if (!ids_aruco_cache[pair.first].empty())
       cv::aruco::drawDetectedMarkers(img_temp, corners_cache[pair.first], ids_aruco_cache[pair.first]);
     if (!rejects_cache[pair.first].empty())
       cv::aruco::drawDetectedMarkers(img_temp, rejects_cache[pair.first], cv::noArray(), cv::Scalar(100, 0, 255));
+    
     // Draw what camera this is
     auto txtpt = (is_small) ? cv::Point(10, 30) : cv::Point(30, 60);
     if (overlay == "") {

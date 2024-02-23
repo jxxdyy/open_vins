@@ -25,6 +25,7 @@
 #include "feat/FeatureDatabase.h"
 #include "feat/FeatureInitializer.h"
 #include "track/TrackAruco.h"
+#include "track/TrackApril.h"
 #include "track/TrackDescriptor.h"
 #include "track/TrackKLT.h"
 #include "track/TrackSIM.h"
@@ -145,6 +146,12 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
                                                            params.use_stereo, params.histogram_method, params.downsize_aruco));
   }
 
+  // Initialize our april tag extractor
+  if (params.use_april) {
+    trackAPRIL = std::shared_ptr<TrackBase>(new TrackApril(state->_cam_intrinsics_cameras, "tag36h11",
+                                                           params.use_stereo, params.histogram_method, params.downsize_april));                                                
+  }
+
   // Initialize our state propagator
   propagator = std::make_shared<Propagator>(params.imu_noises, params.gravity_mag);
 
@@ -163,30 +170,40 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
   }
 }
 
-void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
 
-  // The oldest time we need IMU with is the last clone
-  // We shouldn't really need the whole window, but if we go backwards in time we will
-  double oldest_time = state->margtimestep();
-  if (oldest_time > state->_timestamp) {
-    oldest_time = -1;
-  }
-  if (!is_initialized_vio) {
-    oldest_time = message.timestamp - params.init_options.init_window_time + state->_calib_dt_CAMtoIMU->value()(0) - 0.10;
-  }
-  propagator->feed_imu(message, oldest_time);
+/**
+ * @brief //* Propagator, Initializer, updaterZUPT 객체의 feed_imu(imu data 정리) 과정을 거침 
+*/
+void VioManager::feed_measurement_imu(const ov_core::ImuData &message) 
+{
+    // The oldest time we need IMU with is the last clone
+    // We shouldn't really need the whole window, but if we go backwards in time we will
+    double oldest_time = state->margtimestep();
+    if (oldest_time > state->_timestamp) {
+        oldest_time = -1;
+    }
 
-  // Push back to our initializer
-  if (!is_initialized_vio) {
-    initializer->feed_imu(message, oldest_time);
-  }
+    // 현재 imu stamp - 처음 param setting 시 걸린 시간 + camtoimu calib 소요 시간 - 0.1s
+    if (!is_initialized_vio) {
+        oldest_time = message.timestamp - params.init_options.init_window_time + state->_calib_dt_CAMtoIMU->value()(0) - 0.10;
+    }
 
-  // Push back to the zero velocity updater if it is enabled
-  // No need to push back if we are just doing the zv-update at the begining and we have moved
-  if (is_initialized_vio && updaterZUPT != nullptr && (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
-    updaterZUPT->feed_imu(message, oldest_time);
-  }
+    // imu 데이터 저장 및 oldest_time 이전 데이테들은 모두 지워버림
+    propagator->feed_imu(message, oldest_time);
+
+    // Push back to our initializer
+    if (!is_initialized_vio) {
+        initializer->feed_imu(message, oldest_time);
+    }
+
+    // Push back to the zero velocity updater if it is enabled
+    // No need to push back if we are just doing the zv-update at the begining and we have moved
+    if (is_initialized_vio && updaterZUPT != nullptr && (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
+        updaterZUPT->feed_imu(message, oldest_time);
+    }
 }
+
+
 
 void VioManager::feed_measurement_simulation(double timestamp, const std::vector<int> &camids,
                                              const std::vector<std::vector<std::pair<size_t, Eigen::VectorXf>>> &feats) {
@@ -253,75 +270,88 @@ void VioManager::feed_measurement_simulation(double timestamp, const std::vector
   do_feature_propagate_update(message);
 }
 
-void VioManager::track_image_and_update(const ov_core::CameraData &message_const) {
 
-  // Start timing
-  rT1 = boost::posix_time::microsec_clock::local_time();
 
-  // Assert we have valid measurement data and ids
-  assert(!message_const.sensor_ids.empty());
-  assert(message_const.sensor_ids.size() == message_const.images.size());
-  for (size_t i = 0; i < message_const.sensor_ids.size() - 1; i++) {
-    assert(message_const.sensor_ids.at(i) != message_const.sensor_ids.at(i + 1));
-  }
+void VioManager::track_image_and_update(const ov_core::CameraData &message_const) 
+{
+    // Start timing
+    rT1 = boost::posix_time::microsec_clock::local_time();
 
-  // Downsample if we are downsampling
-  ov_core::CameraData message = message_const;
-  for (size_t i = 0; i < message.sensor_ids.size() && params.downsample_cameras; i++) {
-    cv::Mat img = message.images.at(i);
-    cv::Mat mask = message.masks.at(i);
-    cv::Mat img_temp, mask_temp;
-    cv::pyrDown(img, img_temp, cv::Size(img.cols / 2.0, img.rows / 2.0));
-    message.images.at(i) = img_temp;
-    cv::pyrDown(mask, mask_temp, cv::Size(mask.cols / 2.0, mask.rows / 2.0));
-    message.masks.at(i) = mask_temp;
-  }
-
-  // Perform our feature tracking!
-  trackFEATS->feed_new_camera(message);
-
-  // If the aruco tracker is available, the also pass to it
-  // NOTE: binocular tracking for aruco doesn't make sense as we by default have the ids
-  // NOTE: thus we just call the stereo tracking if we are doing binocular!
-  if (is_initialized_vio && trackARUCO != nullptr) {
-    trackARUCO->feed_new_camera(message);
-  }
-  rT2 = boost::posix_time::microsec_clock::local_time();
-
-  // Check if we should do zero-velocity, if so update the state with it
-  // Note that in the case that we only use in the beginning initialization phase
-  // If we have since moved, then we should never try to do a zero velocity update!
-  if (is_initialized_vio && updaterZUPT != nullptr && (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
-    // If the same state time, use the previous timestep decision
-    if (state->_timestamp != message.timestamp) {
-      did_zupt_update = updaterZUPT->try_update(state, message.timestamp);
+    // Assert we have valid measurement data and ids
+    assert(!message_const.sensor_ids.empty());
+    assert(message_const.sensor_ids.size() == message_const.images.size());
+    for (size_t i = 0; i < message_const.sensor_ids.size() - 1; i++) {
+        assert(message_const.sensor_ids.at(i) != message_const.sensor_ids.at(i + 1));
     }
-    if (did_zupt_update) {
-      assert(state->_timestamp == message.timestamp);
-      propagator->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
-      updaterZUPT->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
-      propagator->invalidate_cache();
-      return;
-    }
-  }
 
-  // If we do not have VIO initialization, then try to initialize
-  // TODO: Or if we are trying to reset the system, then do that here!
-  if (!is_initialized_vio) {
-    is_initialized_vio = try_to_initialize(message);
+    // Downsample if we are downsampling
+    ov_core::CameraData message = message_const;
+    for (size_t i = 0; i < message.sensor_ids.size() && params.downsample_cameras; i++) 
+    {
+        cv::Mat img = message.images.at(i);
+        cv::Mat mask = message.masks.at(i);
+        cv::Mat img_temp, mask_temp;
+        cv::pyrDown(img, img_temp, cv::Size(img.cols / 2.0, img.rows / 2.0));
+        message.images.at(i) = img_temp;
+        cv::pyrDown(mask, mask_temp, cv::Size(mask.cols / 2.0, mask.rows / 2.0));
+        message.masks.at(i) = mask_temp;
+    }
+
+    // Perform our feature tracking!
+    trackFEATS->feed_new_camera(message);
+
+    // If the aruco tracker is available, the also pass to it
+    // NOTE: binocular tracking for aruco doesn't make sense as we by default have the ids
+    // NOTE: thus we just call the stereo tracking if we are doing binocular!
+    if (is_initialized_vio && trackARUCO != nullptr) {
+        PRINT_INFO("### ArUco mode is executed ###\n")
+        // std::cout << "ArUco mode is executed" << std::endl;
+        trackARUCO->feed_new_camera(message);
+    }
+    else if (is_initialized_vio && trackAPRIL != nullptr) {
+        PRINT_INFO("### April mode is executed ###\n")
+        // std::cout << "April mode is executed" << std::endl;
+        trackAPRIL->feed_new_camera(message);
+    }
+    rT2 = boost::posix_time::microsec_clock::local_time();
+
+
+    // Check if we should do zero-velocity, if so update the state with it
+    // Note that in the case that we only use in the beginning initialization phase
+    // If we have since moved, then we should never try to do a zero velocity update!
+    if (is_initialized_vio && updaterZUPT != nullptr && (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
+        // If the same state time, use the previous timestep decision
+        if (state->_timestamp != message.timestamp) {
+        did_zupt_update = updaterZUPT->try_update(state, message.timestamp);
+        }
+        if (did_zupt_update) {
+        assert(state->_timestamp == message.timestamp);
+        propagator->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
+        updaterZUPT->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
+        propagator->invalidate_cache();
+        return;
+        }
+    }
+
+    // If we do not have VIO initialization, then try to initialize
+    // TODO: Or if we are trying to reset the system, then do that here!
     if (!is_initialized_vio) {
-      double time_track = (rT2 - rT1).total_microseconds() * 1e-6;
-      PRINT_DEBUG(BLUE "[TIME]: %.4f seconds for tracking\n" RESET, time_track);
-      return;
+        is_initialized_vio = try_to_initialize(message);
+        if (!is_initialized_vio) {
+        double time_track = (rT2 - rT1).total_microseconds() * 1e-6;
+        PRINT_DEBUG(BLUE "[TIME]: %.4f seconds for tracking\n" RESET, time_track);
+        return;
+        }
     }
-  }
 
-  // Call on our propagate and update function
-  do_feature_propagate_update(message);
+    // Call on our propagate and update function
+    do_feature_propagate_update(message);
 }
 
-void VioManager::do_feature_propagate_update(const ov_core::CameraData &message) {
 
+
+void VioManager::do_feature_propagate_update(const ov_core::CameraData &message) 
+{
   //===================================================================================
   // State propagation, and clone augmentation
   //===================================================================================
@@ -359,6 +389,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   }
   has_moved_since_zupt = true;
 
+
   //===================================================================================
   // MSCKF features and KLT tracks that are SLAM features
   //===================================================================================
@@ -369,10 +400,16 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   feats_lost = trackFEATS->get_feature_database()->features_not_containing_newer(state->_timestamp, false, true);
 
   // Don't need to get the oldest features until we reach our max number of clones
-  if ((int)state->_clones_IMU.size() > state->_options.max_clone_size || (int)state->_clones_IMU.size() > 5) {
+  if ((int)state->_clones_IMU.size() > state->_options.max_clone_size || (int)state->_clones_IMU.size() > 5) 
+  {
     feats_marg = trackFEATS->get_feature_database()->features_containing(state->margtimestep(), false, true);
-    if (trackARUCO != nullptr && message.timestamp - startup_time >= params.dt_slam_delay) {
+    if (trackARUCO != nullptr && message.timestamp - startup_time >= params.dt_slam_delay) 
+    {
       feats_slam = trackARUCO->get_feature_database()->features_containing(state->margtimestep(), false, true);
+    }
+    if (trackAPRIL != nullptr && message.timestamp - startup_time >= params.dt_slam_delay) 
+    {
+      feats_slam = trackAPRIL->get_feature_database()->features_containing(state->margtimestep(), false, true);
     }
   }
 
@@ -458,11 +495,19 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // NOTE: if you do not use FEJ, these types of slam features *degrade* the estimator performance....
   // NOTE: we will also marginalize SLAM features if they have failed their update a couple times in a row
   for (std::pair<const size_t, std::shared_ptr<Landmark>> &landmark : state->_features_SLAM) {
-    if (trackARUCO != nullptr) {
+    if (trackARUCO != nullptr) 
+    {
       std::shared_ptr<Feature> feat1 = trackARUCO->get_feature_database()->get_feature(landmark.second->_featid);
       if (feat1 != nullptr)
         feats_slam.push_back(feat1);
     }
+    if (trackAPRIL != nullptr)
+    {
+      std::shared_ptr<Feature> feat1 = trackAPRIL->get_feature_database()->get_feature(landmark.second->_featid);
+      if (feat1 != nullptr)
+        feats_slam.push_back(feat1);
+    }
+
     std::shared_ptr<Feature> feat2 = trackFEATS->get_feature_database()->get_feature(landmark.second->_featid);
     if (feat2 != nullptr)
       feats_slam.push_back(feat2);
@@ -482,12 +527,16 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
 
   // Separate our SLAM features into new ones, and old ones
   std::vector<std::shared_ptr<Feature>> feats_slam_DELAYED, feats_slam_UPDATE;
-  for (size_t i = 0; i < feats_slam.size(); i++) {
-    if (state->_features_SLAM.find(feats_slam.at(i)->featid) != state->_features_SLAM.end()) {
+  for (size_t i = 0; i < feats_slam.size(); i++) 
+  {
+    if (state->_features_SLAM.find(feats_slam.at(i)->featid) != state->_features_SLAM.end()) 
+    {
       feats_slam_UPDATE.push_back(feats_slam.at(i));
       // PRINT_DEBUG("[UPDATE-SLAM]: found old feature %d (%d
       // measurements)\n",(int)feats_slam.at(i)->featid,(int)feats_slam.at(i)->timestamps_left.size());
-    } else {
+    } 
+    else 
+    {
       feats_slam_DELAYED.push_back(feats_slam.at(i));
       // PRINT_DEBUG("[UPDATE-SLAM]: new feature ready %d (%d
       // measurements)\n",(int)feats_slam.at(i)->featid,(int)feats_slam.at(i)->timestamps_left.size());
@@ -498,6 +547,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   std::vector<std::shared_ptr<Feature>> featsup_MSCKF = feats_lost;
   featsup_MSCKF.insert(featsup_MSCKF.end(), feats_marg.begin(), feats_marg.end());
   featsup_MSCKF.insert(featsup_MSCKF.end(), feats_maxtracks.begin(), feats_maxtracks.end());
+
 
   //===================================================================================
   // Now that we have a list of features, lets do the EKF update for MSCKF and SLAM!
@@ -547,6 +597,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   updaterSLAM->delayed_init(state, feats_slam_DELAYED);
   rT6 = boost::posix_time::microsec_clock::local_time();
 
+  //! [Bookmark]
   //===================================================================================
   // Update our visualization feature set, and clean up the old features
   //===================================================================================
@@ -580,6 +631,9 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   if (trackARUCO != nullptr) {
     trackARUCO->get_feature_database()->cleanup();
   }
+  if (trackAPRIL != nullptr) {
+    trackAPRIL->get_feature_database()->cleanup();
+  }
 
   // First do anchor change if we are about to lose an anchor pose
   updaterSLAM->change_anchors(state);
@@ -589,6 +643,9 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
     trackFEATS->get_feature_database()->cleanup_measurements(state->margtimestep());
     if (trackARUCO != nullptr) {
       trackARUCO->get_feature_database()->cleanup_measurements(state->margtimestep());
+    }
+    if (trackAPRIL != nullptr) {
+      trackAPRIL->get_feature_database()->cleanup_measurements(state->margtimestep());
     }
   }
 

@@ -66,60 +66,60 @@ public:
 
     // Check if file exists
     if (!fail_if_not_found && !boost::filesystem::exists(config_path)) {
-      config = nullptr;
-      return;
+        config = nullptr;
+        return;
     }
     if (!boost::filesystem::exists(config_path)) {
-      PRINT_ERROR(RED "unable to open the configuration file!\n%s\n" RESET, config_path.c_str());
-      std::exit(EXIT_FAILURE);
+        PRINT_ERROR(RED "unable to open the configuration file!\n%s\n" RESET, config_path.c_str());
+        std::exit(EXIT_FAILURE);
     }
 
     // Open the file, error if we can't
     config = std::make_shared<cv::FileStorage>(config_path, cv::FileStorage::READ);
     if (!fail_if_not_found && !config->isOpened()) {
-      config = nullptr;
-      return;
+        config = nullptr;
+        return;
     }
     if (!config->isOpened()) {
-      PRINT_ERROR(RED "unable to open the configuration file!\n%s\n" RESET, config_path.c_str());
-      std::exit(EXIT_FAILURE);
+        PRINT_ERROR(RED "unable to open the configuration file!\n%s\n" RESET, config_path.c_str());
+        std::exit(EXIT_FAILURE);
     }
   }
 
 #if ROS_AVAILABLE == 1
-  /// Allows setting of the node handler if we have ROS to override parameters
-  void set_node_handler(std::shared_ptr<ros::NodeHandle> nh_) { this->nh = nh_; }
+    /// Allows setting of the node handler if we have ROS to override parameters
+    void set_node_handler(std::shared_ptr<ros::NodeHandle> nh_) { this->nh = nh_; }
 #endif
 
 #if ROS_AVAILABLE == 2
-  /// Allows setting of the node if we have ROS to override parameters
-  void set_node(std::shared_ptr<rclcpp::Node> &node_) { this->node = node_; }
+    /// Allows setting of the node if we have ROS to override parameters
+    void set_node(std::shared_ptr<rclcpp::Node> &node_) { this->node = node_; }
 #endif
 
-  /**
-   * @brief Will get the folder this config file is in
-   * @return Config folder
-   */
-  std::string get_config_folder() { return config_path_.substr(0, config_path_.find_last_of('/')) + "/"; }
+    /**
+     * @brief Will get the folder this config file is in
+     * @return Config folder
+     */
+    std::string get_config_folder() { return config_path_.substr(0, config_path_.find_last_of('/')) + "/"; }
 
-  /**
-   * @brief Check to see if all parameters were read succesfully
-   * @return True if we found all parameters
-   */
-  bool successful() const { return all_params_found_successfully; }
+    /**
+     * @brief Check to see if all parameters were read succesfully
+     * @return True if we found all parameters
+     */
+    bool successful() const { return all_params_found_successfully; }
 
-  /**
-   * @brief Custom parser for the ESTIMATOR parameters.
-   *
-   * This will load the data from the main config file.
-   * If it is unable it will give a warning to the user it couldn't be found.
-   *
-   * @tparam T Type of parameter we are looking for.
-   * @param node_name Name of the node
-   * @param node_result Resulting value (should already have default value in it)
-   * @param required If this parameter is required by the user to set
-   */
-  template <class T> void parse_config(const std::string &node_name, T &node_result, bool required = true) {
+    /**
+     * @brief Custom parser for the ESTIMATOR parameters.
+     *
+     * This will load the data from the main config file.
+     * If it is unable it will give a warning to the user it couldn't be found.
+     *
+     * @tparam T Type of parameter we are looking for.
+     * @param node_name Name of the node
+     * @param node_result Resulting value (should already have default value in it)
+     * @param required If this parameter is required by the user to set
+     */
+    template <class T> void parse_config(const std::string &node_name, T &node_result, bool required = true) {
 
 #if ROS_AVAILABLE == 1
     if (nh != nullptr && nh->getParam(node_name, node_result)) {

@@ -21,12 +21,20 @@ else ()
     set(CATKIN_GLOBAL_INCLUDE_DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/open_vins/")
 endif ()
 
+
+if (apriltag_FOUND)
+        set(APRILTAG_INCLUDE_DIRS "/usr/local/include/apriltag")
+        set(APRILTAG_SRC_DIRS "/usr/local/lib/libapriltag.so")
+endif()
+
+
 # Include our header files
 include_directories(
         src
         ${EIGEN3_INCLUDE_DIR}
         ${Boost_INCLUDE_DIRS}
         ${catkin_INCLUDE_DIRS}
+        ${APRILTAG_INCLUDE_DIRS}
 )
 
 # Set link libraries used by all binaries
@@ -34,6 +42,7 @@ list(APPEND thirdparty_libraries
         ${Boost_LIBRARIES}
         ${OpenCV_LIBRARIES}
         ${catkin_LIBRARIES}
+        ${APRILTAG_SRC_DIRS}
 )
 
 ##################################################
@@ -47,6 +56,7 @@ list(APPEND LIBRARY_SOURCES
         src/sim/BsplineSE3.cpp
         src/track/TrackBase.cpp
         src/track/TrackAruco.cpp
+        src/track/TrackApril.cpp
         src/track/TrackDescriptor.cpp
         src/track/TrackKLT.cpp
         src/track/TrackSIM.cpp

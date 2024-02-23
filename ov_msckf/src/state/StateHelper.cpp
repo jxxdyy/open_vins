@@ -223,9 +223,11 @@ void StateHelper::set_initial_covariance(std::shared_ptr<State> state, const Eig
   state->_Cov = state->_Cov.selfadjointView<Eigen::Upper>();
 }
 
-Eigen::MatrixXd StateHelper::get_marginal_covariance(std::shared_ptr<State> state,
-                                                     const std::vector<std::shared_ptr<Type>> &small_variables) {
 
+
+Eigen::MatrixXd StateHelper::get_marginal_covariance(std::shared_ptr<State> state,
+                                                     const std::vector<std::shared_ptr<Type>> &small_variables)                                                
+{
   // Calculate the marginal covariance size we need to make our matrix
   int cov_size = 0;
   for (size_t i = 0; i < small_variables.size(); i++) {
@@ -628,17 +630,24 @@ void StateHelper::marginalize_old_clone(std::shared_ptr<State> state) {
   }
 }
 
-void StateHelper::marginalize_slam(std::shared_ptr<State> state) {
+
+
+void StateHelper::marginalize_slam(std::shared_ptr<State> state) 
+{
   // Remove SLAM features that have their marginalization flag set
   // We also check that we do not remove any aruoctag landmarks
   int ct_marginalized = 0;
   auto it0 = state->_features_SLAM.begin();
-  while (it0 != state->_features_SLAM.end()) {
-    if ((*it0).second->should_marg && (int)(*it0).first > 4 * state->_options.max_aruco_features) {
+  while (it0 != state->_features_SLAM.end()) 
+  {
+    if ((*it0).second->should_marg && (int)(*it0).first > 4 * state->_options.max_aruco_features) 
+    {
       StateHelper::marginalize(state, (*it0).second);
       it0 = state->_features_SLAM.erase(it0);
       ct_marginalized++;
-    } else {
+    } 
+    else 
+    {
       it0++;
     }
   }

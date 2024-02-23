@@ -35,220 +35,231 @@ using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
 
+//* Default constructor
 ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_ptr<VioManager> app, std::shared_ptr<Simulator> sim)
     : _nh(nh), _app(app), _sim(sim), thread_update_running(false) {
 
-  // Setup our transform broadcaster
-  mTfBr = std::make_shared<tf::TransformBroadcaster>();
+    // Setup our transform broadcaster
+    mTfBr = std::make_shared<tf::TransformBroadcaster>();
 
-  // Create image transport
-  image_transport::ImageTransport it(*_nh);
+    // Create image transport
+    image_transport::ImageTransport it(*_nh);
 
-  // Setup pose and path publisher
-  pub_poseimu = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>("poseimu", 2);
-  PRINT_DEBUG("Publishing: %s\n", pub_poseimu.getTopic().c_str());
-  pub_odomimu = nh->advertise<nav_msgs::Odometry>("odomimu", 2);
-  PRINT_DEBUG("Publishing: %s\n", pub_odomimu.getTopic().c_str());
-  pub_pathimu = nh->advertise<nav_msgs::Path>("pathimu", 2);
-  PRINT_DEBUG("Publishing: %s\n", pub_pathimu.getTopic().c_str());
+    // Setup pose and path publisher
+    pub_poseimu = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>("poseimu", 2);
+    PRINT_DEBUG("Publishing: %s\n", pub_poseimu.getTopic().c_str());
+    pub_odomimu = nh->advertise<nav_msgs::Odometry>("odomimu", 2);
+    PRINT_DEBUG("Publishing: %s\n", pub_odomimu.getTopic().c_str());
+    pub_pathimu = nh->advertise<nav_msgs::Path>("pathimu", 2);
+    PRINT_DEBUG("Publishing: %s\n", pub_pathimu.getTopic().c_str());
 
-  // 3D points publishing
-  pub_points_msckf = nh->advertise<sensor_msgs::PointCloud2>("points_msckf", 2);
-  PRINT_DEBUG("Publishing: %s\n", pub_points_msckf.getTopic().c_str());
-  pub_points_slam = nh->advertise<sensor_msgs::PointCloud2>("points_slam", 2);
-  PRINT_DEBUG("Publishing: %s\n", pub_points_msckf.getTopic().c_str());
-  pub_points_aruco = nh->advertise<sensor_msgs::PointCloud2>("points_aruco", 2);
-  PRINT_DEBUG("Publishing: %s\n", pub_points_aruco.getTopic().c_str());
-  pub_points_sim = nh->advertise<sensor_msgs::PointCloud2>("points_sim", 2);
-  PRINT_DEBUG("Publishing: %s\n", pub_points_sim.getTopic().c_str());
+    // 3D points publishing
+    pub_points_msckf = nh->advertise<sensor_msgs::PointCloud2>("points_msckf", 2);
+    PRINT_DEBUG("Publishing: %s\n", pub_points_msckf.getTopic().c_str());
+    pub_points_slam = nh->advertise<sensor_msgs::PointCloud2>("points_slam", 2);
+    PRINT_DEBUG("Publishing: %s\n", pub_points_msckf.getTopic().c_str());
+    pub_points_aruco = nh->advertise<sensor_msgs::PointCloud2>("points_aruco", 2);
+    PRINT_DEBUG("Publishing: %s\n", pub_points_aruco.getTopic().c_str());
+    pub_points_sim = nh->advertise<sensor_msgs::PointCloud2>("points_sim", 2);
+    PRINT_DEBUG("Publishing: %s\n", pub_points_sim.getTopic().c_str());
 
-  // Our tracking image
-  it_pub_tracks = it.advertise("trackhist", 2);
-  PRINT_DEBUG("Publishing: %s\n", it_pub_tracks.getTopic().c_str());
+    // Our tracking image
+    it_pub_tracks = it.advertise("trackhist", 2);
+    PRINT_DEBUG("Publishing: %s\n", it_pub_tracks.getTopic().c_str());
 
-  // Groundtruth publishers
-  pub_posegt = nh->advertise<geometry_msgs::PoseStamped>("posegt", 2);
-  PRINT_DEBUG("Publishing: %s\n", pub_posegt.getTopic().c_str());
-  pub_pathgt = nh->advertise<nav_msgs::Path>("pathgt", 2);
-  PRINT_DEBUG("Publishing: %s\n", pub_pathgt.getTopic().c_str());
+    // Groundtruth publishers
+    pub_posegt = nh->advertise<geometry_msgs::PoseStamped>("posegt", 2);
+    PRINT_DEBUG("Publishing: %s\n", pub_posegt.getTopic().c_str());
+    pub_pathgt = nh->advertise<nav_msgs::Path>("pathgt", 2);
+    PRINT_DEBUG("Publishing: %s\n", pub_pathgt.getTopic().c_str());
 
-  // Loop closure publishers
-  pub_loop_pose = nh->advertise<nav_msgs::Odometry>("loop_pose", 2);
-  pub_loop_point = nh->advertise<sensor_msgs::PointCloud>("loop_feats", 2);
-  pub_loop_extrinsic = nh->advertise<nav_msgs::Odometry>("loop_extrinsic", 2);
-  pub_loop_intrinsics = nh->advertise<sensor_msgs::CameraInfo>("loop_intrinsics", 2);
-  it_pub_loop_img_depth = it.advertise("loop_depth", 2);
-  it_pub_loop_img_depth_color = it.advertise("loop_depth_colored", 2);
+    // Loop closure publishers
+    pub_loop_pose = nh->advertise<nav_msgs::Odometry>("loop_pose", 2);
+    pub_loop_point = nh->advertise<sensor_msgs::PointCloud>("loop_feats", 2);
+    pub_loop_extrinsic = nh->advertise<nav_msgs::Odometry>("loop_extrinsic", 2);
+    pub_loop_intrinsics = nh->advertise<sensor_msgs::CameraInfo>("loop_intrinsics", 2);
+    it_pub_loop_img_depth = it.advertise("loop_depth", 2);
+    it_pub_loop_img_depth_color = it.advertise("loop_depth_colored", 2);
 
-  // option to enable publishing of global to IMU transformation
-  nh->param<bool>("publish_global_to_imu_tf", publish_global2imu_tf, true);
-  nh->param<bool>("publish_calibration_tf", publish_calibration_tf, true);
+    // option to enable publishing of global to IMU transformation
+    nh->param<bool>("publish_global_to_imu_tf", publish_global2imu_tf, true);
+    nh->param<bool>("publish_calibration_tf", publish_calibration_tf, true);
 
-  // Load groundtruth if we have it and are not doing simulation
-  // NOTE: needs to be a csv ASL format file
-  if (nh->hasParam("path_gt") && _sim == nullptr) {
-    std::string path_to_gt;
-    nh->param<std::string>("path_gt", path_to_gt, "");
-    if (!path_to_gt.empty()) {
-      DatasetReader::load_gt_file(path_to_gt, gt_states);
-      PRINT_DEBUG("gt file path is: %s\n", path_to_gt.c_str());
+    // Load groundtruth if we have it and are not doing simulation
+    // NOTE: needs to be a csv ASL format file
+    if (nh->hasParam("path_gt") && _sim == nullptr) {
+        std::string path_to_gt;
+        nh->param<std::string>("path_gt", path_to_gt, "");
+        if (!path_to_gt.empty()) {
+        DatasetReader::load_gt_file(path_to_gt, gt_states);
+        PRINT_DEBUG("gt file path is: %s\n", path_to_gt.c_str());
+        }
     }
-  }
 
-  // Load if we should save the total state to file
-  // If so, then open the file and create folders as needed
-  nh->param<bool>("save_total_state", save_total_state, false);
-  if (save_total_state) {
+    // Load if we should save the total state to file
+    // If so, then open the file and create folders as needed
+    nh->param<bool>("save_total_state", save_total_state, false);
+    if (save_total_state) {
 
-    // files we will open
-    std::string filepath_est, filepath_std, filepath_gt;
-    nh->param<std::string>("filepath_est", filepath_est, "state_estimate.txt");
-    nh->param<std::string>("filepath_std", filepath_std, "state_deviation.txt");
-    nh->param<std::string>("filepath_gt", filepath_gt, "state_groundtruth.txt");
+        // files we will open
+        std::string filepath_est, filepath_std, filepath_gt;
+        nh->param<std::string>("filepath_est", filepath_est, "state_estimate.txt");
+        nh->param<std::string>("filepath_std", filepath_std, "state_deviation.txt");
+        nh->param<std::string>("filepath_gt", filepath_gt, "state_groundtruth.txt");
 
-    // If it exists, then delete it
-    if (boost::filesystem::exists(filepath_est))
-      boost::filesystem::remove(filepath_est);
-    if (boost::filesystem::exists(filepath_std))
-      boost::filesystem::remove(filepath_std);
+        // If it exists, then delete it
+        if (boost::filesystem::exists(filepath_est))
+        boost::filesystem::remove(filepath_est);
+        if (boost::filesystem::exists(filepath_std))
+        boost::filesystem::remove(filepath_std);
 
-    // Create folder path to this location if not exists
-    boost::filesystem::create_directories(boost::filesystem::path(filepath_est.c_str()).parent_path());
-    boost::filesystem::create_directories(boost::filesystem::path(filepath_std.c_str()).parent_path());
+        // Create folder path to this location if not exists
+        boost::filesystem::create_directories(boost::filesystem::path(filepath_est.c_str()).parent_path());
+        boost::filesystem::create_directories(boost::filesystem::path(filepath_std.c_str()).parent_path());
 
-    // Open the files
-    of_state_est.open(filepath_est.c_str());
-    of_state_std.open(filepath_std.c_str());
-    of_state_est << "# timestamp(s) q p v bg ba cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc"
-                 << std::endl;
-    of_state_std << "# timestamp(s) q p v bg ba cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc"
-                 << std::endl;
+        // Open the files
+        of_state_est.open(filepath_est.c_str());
+        of_state_std.open(filepath_std.c_str());
+        of_state_est << "# timestamp(s) q p v bg ba cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc"
+                    << std::endl;
+        of_state_std << "# timestamp(s) q p v bg ba cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc"
+                    << std::endl;
 
-    // Groundtruth if we are simulating
-    if (_sim != nullptr) {
-      if (boost::filesystem::exists(filepath_gt))
-        boost::filesystem::remove(filepath_gt);
-      boost::filesystem::create_directories(boost::filesystem::path(filepath_gt.c_str()).parent_path());
-      of_state_gt.open(filepath_gt.c_str());
-      of_state_gt << "# timestamp(s) q p v bg ba cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc"
-                  << std::endl;
+        // Groundtruth if we are simulating
+        if (_sim != nullptr) {
+        if (boost::filesystem::exists(filepath_gt))
+            boost::filesystem::remove(filepath_gt);
+        boost::filesystem::create_directories(boost::filesystem::path(filepath_gt.c_str()).parent_path());
+        of_state_gt.open(filepath_gt.c_str());
+        of_state_gt << "# timestamp(s) q p v bg ba cam_imu_dt num_cam cam0_k cam0_d cam0_rot cam0_trans ... imu_model dw da tg wtoI atoI etc"
+                    << std::endl;
+        }
     }
-  }
 
-  // Start thread for the image publishing
-  if (_app->get_params().use_multi_threading_pubs) {
-    std::thread thread([&] {
-      ros::Rate loop_rate(20);
-      while (ros::ok()) {
-        publish_images();
-        loop_rate.sleep();
-      }
-    });
-    thread.detach();
-  }
+    // Start thread for the image publishing
+    if (_app->get_params().use_multi_threading_pubs) {
+        std::thread thread([&] {
+        ros::Rate loop_rate(20);
+        while (ros::ok()) {
+            publish_images();
+            loop_rate.sleep();
+        }
+        });
+        thread.detach();
+    }
 }
 
-void ROS1Visualizer::setup_subscribers(std::shared_ptr<ov_core::YamlParser> parser) {
 
-  // We need a valid parser
-  assert(parser != nullptr);
 
-  // Create imu subscriber (handle legacy ros param info)
-  std::string topic_imu;
-  _nh->param<std::string>("topic_imu", topic_imu, "/imu0");
-  parser->parse_external("relative_config_imu", "imu0", "rostopic", topic_imu);
-  sub_imu = _nh->subscribe(topic_imu, 1000, &ROS1Visualizer::callback_inertial, this);
-  PRINT_INFO("subscribing to IMU: %s\n", topic_imu.c_str());
+void ROS1Visualizer::setup_subscribers(std::shared_ptr<ov_core::YamlParser> parser) 
+{
+    // We need a valid parser
+    assert(parser != nullptr);
 
-  // Logic for sync stereo subscriber
-  // https://answers.ros.org/question/96346/subscribe-to-two-image_raws-with-one-function/?answer=96491#post-id-96491
-  if (_app->get_params().state_options.num_cameras == 2) {
-    // Read in the topics
-    std::string cam_topic0, cam_topic1;
-    _nh->param<std::string>("topic_camera" + std::to_string(0), cam_topic0, "/cam" + std::to_string(0) + "/image_raw");
-    _nh->param<std::string>("topic_camera" + std::to_string(1), cam_topic1, "/cam" + std::to_string(1) + "/image_raw");
-    parser->parse_external("relative_config_imucam", "cam" + std::to_string(0), "rostopic", cam_topic0);
-    parser->parse_external("relative_config_imucam", "cam" + std::to_string(1), "rostopic", cam_topic1);
-    // Create sync filter (they have unique pointers internally, so we have to use move logic here...)
-    auto image_sub0 = std::make_shared<message_filters::Subscriber<sensor_msgs::Image>>(*_nh, cam_topic0, 1);
-    auto image_sub1 = std::make_shared<message_filters::Subscriber<sensor_msgs::Image>>(*_nh, cam_topic1, 1);
-    auto sync = std::make_shared<message_filters::Synchronizer<sync_pol>>(sync_pol(10), *image_sub0, *image_sub1);
-    sync->registerCallback(boost::bind(&ROS1Visualizer::callback_stereo, this, _1, _2, 0, 1));
-    // Append to our vector of subscribers
-    sync_cam.push_back(sync);
-    sync_subs_cam.push_back(image_sub0);
-    sync_subs_cam.push_back(image_sub1);
-    PRINT_INFO("subscribing to cam (stereo): %s\n", cam_topic0.c_str());
-    PRINT_INFO("subscribing to cam (stereo): %s\n", cam_topic1.c_str());
-  } else {
-    // Now we should add any non-stereo callbacks here
-    for (int i = 0; i < _app->get_params().state_options.num_cameras; i++) {
-      // read in the topic
-      std::string cam_topic;
-      _nh->param<std::string>("topic_camera" + std::to_string(i), cam_topic, "/cam" + std::to_string(i) + "/image_raw");
-      parser->parse_external("relative_config_imucam", "cam" + std::to_string(i), "rostopic", cam_topic);
-      // create subscriber
-      subs_cam.push_back(_nh->subscribe<sensor_msgs::Image>(cam_topic, 10, boost::bind(&ROS1Visualizer::callback_monocular, this, _1, i)));
-      PRINT_INFO("subscribing to cam (mono): %s\n", cam_topic.c_str());
+    // Create imu subscriber (handle legacy ros param info)
+    std::string topic_imu;
+    _nh->param<std::string>("topic_imu", topic_imu, "/imu0");
+    parser->parse_external("relative_config_imu", "imu0", "rostopic", topic_imu);
+    sub_imu = _nh->subscribe(topic_imu, 1000, &ROS1Visualizer::callback_inertial, this);
+    PRINT_INFO("subscribing to IMU: %s\n", topic_imu.c_str());
+
+    //! Logic for sync stereo subscriber
+    // https://answers.ros.org/question/96346/subscribe-to-two-image_raws-with-one-function/?answer=96491#post-id-96491
+    if (_app->get_params().state_options.num_cameras == 2) {
+        // Read in the topics
+        std::string cam_topic0, cam_topic1;
+        _nh->param<std::string>("topic_camera" + std::to_string(0), cam_topic0, "/cam" + std::to_string(0) + "/image_raw");
+        _nh->param<std::string>("topic_camera" + std::to_string(1), cam_topic1, "/cam" + std::to_string(1) + "/image_raw");
+        parser->parse_external("relative_config_imucam", "cam" + std::to_string(0), "rostopic", cam_topic0);
+        parser->parse_external("relative_config_imucam", "cam" + std::to_string(1), "rostopic", cam_topic1);
+        // Create sync filter (they have unique pointers internally, so we have to use move logic here...)
+        auto image_sub0 = std::make_shared<message_filters::Subscriber<sensor_msgs::Image>>(*_nh, cam_topic0, 1);
+        auto image_sub1 = std::make_shared<message_filters::Subscriber<sensor_msgs::Image>>(*_nh, cam_topic1, 1);
+        auto sync = std::make_shared<message_filters::Synchronizer<sync_pol>>(sync_pol(10), *image_sub0, *image_sub1);
+        sync->registerCallback(boost::bind(&ROS1Visualizer::callback_stereo, this, _1, _2, 0, 1));
+
+        // Append to our vector of subscribers
+        sync_cam.push_back(sync);
+        sync_subs_cam.push_back(image_sub0);
+        sync_subs_cam.push_back(image_sub1);
+        PRINT_INFO("subscribing to cam (stereo): %s\n", cam_topic0.c_str());    // "/cam0/image_raw"
+        PRINT_INFO("subscribing to cam (stereo): %s\n", cam_topic1.c_str());    // "/cam1/image_raw"
+    } 
+    else 
+    {
+        // Now we should add any non-stereo callbacks here
+        for (int i = 0; i < _app->get_params().state_options.num_cameras; i++) {
+            // read in the topic
+            std::string cam_topic;
+            _nh->param<std::string>("topic_camera" + std::to_string(i), cam_topic, "/cam" + std::to_string(i) + "/image_raw");
+            parser->parse_external("relative_config_imucam", "cam" + std::to_string(i), "rostopic", cam_topic);
+            // create subscriber
+            subs_cam.push_back(_nh->subscribe<sensor_msgs::Image>(cam_topic, 10, boost::bind(&ROS1Visualizer::callback_monocular, this, _1, i)));
+            PRINT_INFO("subscribing to cam (mono): %s\n", cam_topic.c_str());
+        }
     }
-  }
 }
+
+
 
 void ROS1Visualizer::visualize() {
 
-  // Return if we have already visualized
-  if (last_visualization_timestamp == _app->get_state()->_timestamp && _app->initialized())
-    return;
-  last_visualization_timestamp = _app->get_state()->_timestamp;
+    // Return if we have already visualized
+    if (last_visualization_timestamp == _app->get_state()->_timestamp && _app->initialized())
+        return;
+    last_visualization_timestamp = _app->get_state()->_timestamp;
 
-  // Start timing
-  // boost::posix_time::ptime rT0_1, rT0_2;
-  // rT0_1 = boost::posix_time::microsec_clock::local_time();
+    // Start timing
+    // boost::posix_time::ptime rT0_1, rT0_2;
+    // rT0_1 = boost::posix_time::microsec_clock::local_time();
 
-  // publish current image (only if not multi-threaded)
-  if (!_app->get_params().use_multi_threading_pubs)
-    publish_images();
+    // publish current image (only if not multi-threaded)
+    if (!_app->get_params().use_multi_threading_pubs)
+        publish_images();
 
-  // Return if we have not inited
-  if (!_app->initialized())
-    return;
+    // Return if we have not inited
+    if (!_app->initialized())
+        return;
 
-  // Save the start time of this dataset
-  if (!start_time_set) {
-    rT1 = boost::posix_time::microsec_clock::local_time();
-    start_time_set = true;
-  }
+    // Save the start time of this dataset
+    if (!start_time_set) {
+        rT1 = boost::posix_time::microsec_clock::local_time();
+        start_time_set = true;
+    }
 
-  // publish state
-  publish_state();
+    // publish state
+    publish_state();
 
-  // publish points
-  publish_features();
+    // publish points
+    publish_features();
 
-  // Publish gt if we have it
-  publish_groundtruth();
+    // Publish gt if we have it
+    publish_groundtruth();
 
-  // Publish keyframe information
-  publish_loopclosure_information();
+    // Publish keyframe information
+    publish_loopclosure_information();
 
-  // Save total state
-  if (save_total_state) {
-    ROSVisualizerHelper::sim_save_total_state_to_file(_app->get_state(), _sim, of_state_est, of_state_std, of_state_gt);
-  }
+    // Save total state
+    if (save_total_state) {
+        ROSVisualizerHelper::sim_save_total_state_to_file(_app->get_state(), _sim, of_state_est, of_state_std, of_state_gt);
+    }
 
-  // Print how much time it took to publish / displaying things
-  // rT0_2 = boost::posix_time::microsec_clock::local_time();
-  // double time_total = (rT0_2 - rT0_1).total_microseconds() * 1e-6;
-  // PRINT_DEBUG(BLUE "[TIME]: %.4f seconds for visualization\n" RESET, time_total);
+    // Print how much time it took to publish / displaying things
+    // rT0_2 = boost::posix_time::microsec_clock::local_time();
+    // double time_total = (rT0_2 - rT0_1).total_microseconds() * 1e-6;
+    // PRINT_DEBUG(BLUE "[TIME]: %.4f seconds for visualization\n" RESET, time_total);
 }
 
-void ROS1Visualizer::visualize_odometry(double timestamp) {
 
+
+void ROS1Visualizer::visualize_odometry(double timestamp) 
+{
   // Return if we have not inited
   if (!_app->initialized())
     return;
 
   // Get fast propagate state at the desired timestamp
+  //* Parsing한 IMU data들을 이용하여 state 및 covariance를 propagation 하는 과정을 거침
   std::shared_ptr<State> state = _app->get_state();
   Eigen::Matrix<double, 13, 1> state_plus = Eigen::Matrix<double, 13, 1>::Zero();
   Eigen::Matrix<double, 12, 12> cov_plus = Eigen::Matrix<double, 12, 12>::Zero();
@@ -281,6 +292,7 @@ void ROS1Visualizer::visualize_odometry(double timestamp) {
   //                 pos_nees);
   //    }
   //  }
+
 
   // Publish our odometry message if requested
   if (pub_odomimu.getNumSubscribers() != 0) {
@@ -349,8 +361,8 @@ void ROS1Visualizer::visualize_odometry(double timestamp) {
   }
 }
 
-void ROS1Visualizer::visualize_final() {
-
+void ROS1Visualizer::visualize_final() 
+{
   // Final time offset value
   if (_app->get_state()->_options.do_calib_camera_timeoffset) {
     PRINT_INFO(REDPURPLE "camera-imu timeoffset = %.5f\n\n" RESET, _app->get_state()->_calib_dt_CAMtoIMU->value()(0));
@@ -435,65 +447,75 @@ void ROS1Visualizer::visualize_final() {
   PRINT_INFO(REDPURPLE "TIME: %.3f seconds\n\n" RESET, (rT2 - rT1).total_microseconds() * 1e-6);
 }
 
-void ROS1Visualizer::callback_inertial(const sensor_msgs::Imu::ConstPtr &msg) {
 
-  // convert into correct format
-  ov_core::ImuData message;
-  message.timestamp = msg->header.stamp.toSec();
-  message.wm << msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z;
-  message.am << msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z;
 
-  // send it to our VIO system
-  _app->feed_measurement_imu(message);
-  visualize_odometry(message.timestamp);
+void ROS1Visualizer::callback_inertial(const sensor_msgs::Imu::ConstPtr &msg) 
+{
+    // convert into correct format
+    ov_core::ImuData message;
+    message.timestamp = msg->header.stamp.toSec();
+    message.wm << msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z;
+    message.am << msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z;
 
-  // If the processing queue is currently active / running just return so we can keep getting measurements
-  // Otherwise create a second thread to do our update in an async manor
-  // The visualization of the state, images, and features will be synchronous with the update!
-  if (thread_update_running)
-    return;
-  thread_update_running = true;
-  std::thread thread([&] {
-    // Lock on the queue (prevents new images from appending)
-    std::lock_guard<std::mutex> lck(camera_queue_mtx);
+    // send it to our VIO system
+    _app->feed_measurement_imu(message);
+    visualize_odometry(message.timestamp);
 
-    // Count how many unique image streams
-    std::map<int, bool> unique_cam_ids;
-    for (const auto &cam_msg : camera_queue) {
-      unique_cam_ids[cam_msg.sensor_ids.at(0)] = true;
+    // If the processing queue is currently active / running just return so we can keep getting measurements
+    // Otherwise create a second thread to do our update in an async manor
+    // The visualization of the state, images, and features will be synchronous with the update!
+    if (thread_update_running)
+        return;
+
+    thread_update_running = true;
+    std::thread thread([&] {
+        // Lock on the queue (prevents new images from appending)
+        std::lock_guard<std::mutex> lck(camera_queue_mtx);
+
+        // Count how many unique image streams
+        std::map<int, bool> unique_cam_ids;
+        for (const auto &cam_msg : camera_queue) {
+            unique_cam_ids[cam_msg.sensor_ids.at(0)] = true;
+        }
+
+        // If we do not have enough unique cameras then we need to wait
+        // We should wait till we have one of each camera to ensure we propagate in the correct order
+        auto params = _app->get_params();
+        size_t num_unique_cameras = (params.state_options.num_cameras == 2) ? 1 : params.state_options.num_cameras;
+        
+        if (unique_cam_ids.size() == num_unique_cameras) 
+        {
+            // Loop through our queue and see if we are able to process any of our camera measurements
+            // We are able to process if we have at least one IMU measurement greater than the camera time
+            double timestamp_imu_inC = message.timestamp - _app->get_state()->_calib_dt_CAMtoIMU->value()(0);
+            while (!camera_queue.empty() && camera_queue.at(0).timestamp < timestamp_imu_inC) 
+            {
+                auto rT0_1 = boost::posix_time::microsec_clock::local_time();
+                double update_dt = 100.0 * (timestamp_imu_inC - camera_queue.at(0).timestamp);
+                _app->feed_measurement_camera(camera_queue.at(0));
+                visualize();
+                camera_queue.pop_front();
+                auto rT0_2 = boost::posix_time::microsec_clock::local_time();
+                double time_total = (rT0_2 - rT0_1).total_microseconds() * 1e-6;
+                PRINT_INFO(BLUE "[TIME]: %.4f seconds total (%.1f hz, %.2f ms behind)\n" RESET, time_total, 1.0 / time_total, update_dt);
+            }
+        }
+        thread_update_running = false;
+    });
+
+    // If we are single threaded, then run single threaded
+    // Otherwise detach this thread so it runs in the background!
+    if (!_app->get_params().use_multi_threading_subs) 
+    {
+        thread.join();
+    } 
+    else 
+    {
+        thread.detach();
     }
-
-    // If we do not have enough unique cameras then we need to wait
-    // We should wait till we have one of each camera to ensure we propagate in the correct order
-    auto params = _app->get_params();
-    size_t num_unique_cameras = (params.state_options.num_cameras == 2) ? 1 : params.state_options.num_cameras;
-    if (unique_cam_ids.size() == num_unique_cameras) {
-
-      // Loop through our queue and see if we are able to process any of our camera measurements
-      // We are able to process if we have at least one IMU measurement greater than the camera time
-      double timestamp_imu_inC = message.timestamp - _app->get_state()->_calib_dt_CAMtoIMU->value()(0);
-      while (!camera_queue.empty() && camera_queue.at(0).timestamp < timestamp_imu_inC) {
-        auto rT0_1 = boost::posix_time::microsec_clock::local_time();
-        double update_dt = 100.0 * (timestamp_imu_inC - camera_queue.at(0).timestamp);
-        _app->feed_measurement_camera(camera_queue.at(0));
-        visualize();
-        camera_queue.pop_front();
-        auto rT0_2 = boost::posix_time::microsec_clock::local_time();
-        double time_total = (rT0_2 - rT0_1).total_microseconds() * 1e-6;
-        PRINT_INFO(BLUE "[TIME]: %.4f seconds total (%.1f hz, %.2f ms behind)\n" RESET, time_total, 1.0 / time_total, update_dt);
-      }
-    }
-    thread_update_running = false;
-  });
-
-  // If we are single threaded, then run single threaded
-  // Otherwise detach this thread so it runs in the background!
-  if (!_app->get_params().use_multi_threading_subs) {
-    thread.join();
-  } else {
-    thread.detach();
-  }
 }
+
+
 
 void ROS1Visualizer::callback_monocular(const sensor_msgs::ImageConstPtr &msg0, int cam_id0) {
 
@@ -534,59 +556,65 @@ void ROS1Visualizer::callback_monocular(const sensor_msgs::ImageConstPtr &msg0, 
   std::sort(camera_queue.begin(), camera_queue.end());
 }
 
+
+
 void ROS1Visualizer::callback_stereo(const sensor_msgs::ImageConstPtr &msg0, const sensor_msgs::ImageConstPtr &msg1, int cam_id0,
                                      int cam_id1) {
 
-  // Check if we should drop this image
-  double timestamp = msg0->header.stamp.toSec();
-  double time_delta = 1.0 / _app->get_params().track_frequency;
-  if (camera_last_timestamp.find(cam_id0) != camera_last_timestamp.end() && timestamp < camera_last_timestamp.at(cam_id0) + time_delta) {
-    return;
-  }
-  camera_last_timestamp[cam_id0] = timestamp;
+    // Check if we should drop this image
+    double timestamp = msg0->header.stamp.toSec();
+    double time_delta = 1.0 / _app->get_params().track_frequency;
 
-  // Get the image
-  cv_bridge::CvImageConstPtr cv_ptr0;
-  try {
-    cv_ptr0 = cv_bridge::toCvShare(msg0, sensor_msgs::image_encodings::MONO8);
-  } catch (cv_bridge::Exception &e) {
-    PRINT_ERROR("cv_bridge exception: %s\n", e.what());
-    return;
-  }
+    //* camera_last_timestamp<image_id, timestamp>
+    if (camera_last_timestamp.find(cam_id0) != camera_last_timestamp.end() && timestamp < camera_last_timestamp.at(cam_id0) + time_delta) {
+        return;
+    }
+    camera_last_timestamp[cam_id0] = timestamp;
 
-  // Get the image
-  cv_bridge::CvImageConstPtr cv_ptr1;
-  try {
-    cv_ptr1 = cv_bridge::toCvShare(msg1, sensor_msgs::image_encodings::MONO8);
-  } catch (cv_bridge::Exception &e) {
-    PRINT_ERROR("cv_bridge exception: %s\n", e.what());
-    return;
-  }
+    // Get the image
+    cv_bridge::CvImageConstPtr cv_ptr0;
+    try {
+        cv_ptr0 = cv_bridge::toCvShare(msg0, sensor_msgs::image_encodings::MONO8);
+    } catch (cv_bridge::Exception &e) {
+        PRINT_ERROR("cv_bridge exception: %s\n", e.what());
+        return;
+    }
 
-  // Create the measurement
-  ov_core::CameraData message;
-  message.timestamp = cv_ptr0->header.stamp.toSec();
-  message.sensor_ids.push_back(cam_id0);
-  message.sensor_ids.push_back(cam_id1);
-  message.images.push_back(cv_ptr0->image.clone());
-  message.images.push_back(cv_ptr1->image.clone());
+    // Get the image
+    cv_bridge::CvImageConstPtr cv_ptr1;
+    try {
+        cv_ptr1 = cv_bridge::toCvShare(msg1, sensor_msgs::image_encodings::MONO8);
+    } catch (cv_bridge::Exception &e) {
+        PRINT_ERROR("cv_bridge exception: %s\n", e.what());
+        return;
+    }
 
-  // Load the mask if we are using it, else it is empty
-  // TODO: in the future we should get this from external pixel segmentation
-  if (_app->get_params().use_mask) {
-    message.masks.push_back(_app->get_params().masks.at(cam_id0));
-    message.masks.push_back(_app->get_params().masks.at(cam_id1));
-  } else {
-    // message.masks.push_back(cv::Mat(cv_ptr0->image.rows, cv_ptr0->image.cols, CV_8UC1, cv::Scalar(255)));
-    message.masks.push_back(cv::Mat::zeros(cv_ptr0->image.rows, cv_ptr0->image.cols, CV_8UC1));
-    message.masks.push_back(cv::Mat::zeros(cv_ptr1->image.rows, cv_ptr1->image.cols, CV_8UC1));
-  }
+    // Create the measurement
+    ov_core::CameraData message;
+    message.timestamp = cv_ptr0->header.stamp.toSec();
+    message.sensor_ids.push_back(cam_id0);
+    message.sensor_ids.push_back(cam_id1);
+    message.images.push_back(cv_ptr0->image.clone());
+    message.images.push_back(cv_ptr1->image.clone());
 
-  // append it to our queue of images
-  std::lock_guard<std::mutex> lck(camera_queue_mtx);
-  camera_queue.push_back(message);
-  std::sort(camera_queue.begin(), camera_queue.end());
+    // Load the mask if we are using it, else it is empty
+    // TODO: in the future we should get this from external pixel segmentation
+    if (_app->get_params().use_mask) {
+        message.masks.push_back(_app->get_params().masks.at(cam_id0));
+        message.masks.push_back(_app->get_params().masks.at(cam_id1));
+    } else {
+        // message.masks.push_back(cv::Mat(cv_ptr0->image.rows, cv_ptr0->image.cols, CV_8UC1, cv::Scalar(255)));
+        message.masks.push_back(cv::Mat::zeros(cv_ptr0->image.rows, cv_ptr0->image.cols, CV_8UC1));
+        message.masks.push_back(cv::Mat::zeros(cv_ptr1->image.rows, cv_ptr1->image.cols, CV_8UC1));
+    }
+
+    // append it to our queue of images
+    std::lock_guard<std::mutex> lck(camera_queue_mtx);
+    camera_queue.push_back(message);
+    std::sort(camera_queue.begin(), camera_queue.end());
 }
+
+
 
 void ROS1Visualizer::publish_state() {
 
@@ -648,194 +676,202 @@ void ROS1Visualizer::publish_state() {
   poses_seq_imu++;
 }
 
-void ROS1Visualizer::publish_images() {
 
-  // Return if we have already visualized
-  if (_app->get_state() == nullptr)
-    return;
-  if (last_visualization_timestamp_image == _app->get_state()->_timestamp && _app->initialized())
-    return;
-  last_visualization_timestamp_image = _app->get_state()->_timestamp;
 
-  // Check if we have subscribers
-  if (it_pub_tracks.getNumSubscribers() == 0)
-    return;
+void ROS1Visualizer::publish_images() 
+{
+    // Return if we have already visualized
+    if (_app->get_state() == nullptr)
+        return;
+    if (last_visualization_timestamp_image == _app->get_state()->_timestamp && _app->initialized())
+        return;
+    last_visualization_timestamp_image = _app->get_state()->_timestamp;
 
-  // Get our image of history tracks
-  cv::Mat img_history = _app->get_historical_viz_image();
-  if (img_history.empty())
-    return;
+    // Check if we have subscribers
+    if (it_pub_tracks.getNumSubscribers() == 0)
+        return;
 
-  // Create our message
-  std_msgs::Header header;
-  header.stamp = ros::Time::now();
-  header.frame_id = "cam0";
-  sensor_msgs::ImagePtr exl_msg = cv_bridge::CvImage(header, "bgr8", img_history).toImageMsg();
+    // Get our image of history tracks
+    cv::Mat img_history = _app->get_historical_viz_image();
+    if (img_history.empty())
+        return;
 
-  // Publish
-  it_pub_tracks.publish(exl_msg);
+    // Create our message
+    std_msgs::Header header;
+    header.stamp = ros::Time::now();
+    header.frame_id = "cam0";
+    sensor_msgs::ImagePtr exl_msg = cv_bridge::CvImage(header, "bgr8", img_history).toImageMsg();
+
+    // Publish
+    it_pub_tracks.publish(exl_msg);
 }
 
-void ROS1Visualizer::publish_features() {
 
-  // Check if we have subscribers
-  if (pub_points_msckf.getNumSubscribers() == 0 && pub_points_slam.getNumSubscribers() == 0 && pub_points_aruco.getNumSubscribers() == 0 &&
-      pub_points_sim.getNumSubscribers() == 0)
-    return;
 
-  // Get our good MSCKF features
-  std::vector<Eigen::Vector3d> feats_msckf = _app->get_good_features_MSCKF();
-  sensor_msgs::PointCloud2 cloud = ROSVisualizerHelper::get_ros_pointcloud(feats_msckf);
-  pub_points_msckf.publish(cloud);
+void ROS1Visualizer::publish_features() 
+{
+    // Check if we have subscribers
+    if (pub_points_msckf.getNumSubscribers() == 0 && pub_points_slam.getNumSubscribers() == 0 && pub_points_aruco.getNumSubscribers() == 0 &&
+        pub_points_sim.getNumSubscribers() == 0)
+        return;
 
-  // Get our good SLAM features
-  std::vector<Eigen::Vector3d> feats_slam = _app->get_features_SLAM();
-  sensor_msgs::PointCloud2 cloud_SLAM = ROSVisualizerHelper::get_ros_pointcloud(feats_slam);
-  pub_points_slam.publish(cloud_SLAM);
+    // Get our good MSCKF features
+    std::vector<Eigen::Vector3d> feats_msckf = _app->get_good_features_MSCKF();
+    sensor_msgs::PointCloud2 cloud = ROSVisualizerHelper::get_ros_pointcloud(feats_msckf);
+    pub_points_msckf.publish(cloud);
 
-  // Get our good ARUCO features
-  std::vector<Eigen::Vector3d> feats_aruco = _app->get_features_ARUCO();
-  sensor_msgs::PointCloud2 cloud_ARUCO = ROSVisualizerHelper::get_ros_pointcloud(feats_aruco);
-  pub_points_aruco.publish(cloud_ARUCO);
+    // Get our good SLAM features
+    std::vector<Eigen::Vector3d> feats_slam = _app->get_features_SLAM();
+    sensor_msgs::PointCloud2 cloud_SLAM = ROSVisualizerHelper::get_ros_pointcloud(feats_slam);
+    pub_points_slam.publish(cloud_SLAM);
 
-  // Skip the rest of we are not doing simulation
-  if (_sim == nullptr)
-    return;
+    // Get our good ARUCO features
+    std::vector<Eigen::Vector3d> feats_aruco = _app->get_features_ARUCO();
+    sensor_msgs::PointCloud2 cloud_ARUCO = ROSVisualizerHelper::get_ros_pointcloud(feats_aruco);
+    pub_points_aruco.publish(cloud_ARUCO);
 
-  // Get our good SIMULATION features
-  std::vector<Eigen::Vector3d> feats_sim = _sim->get_map_vec();
-  sensor_msgs::PointCloud2 cloud_SIM = ROSVisualizerHelper::get_ros_pointcloud(feats_sim);
-  pub_points_sim.publish(cloud_SIM);
+    // Skip the rest of we are not doing simulation
+    if (_sim == nullptr)
+        return;
+
+    // Get our good SIMULATION features
+    std::vector<Eigen::Vector3d> feats_sim = _sim->get_map_vec();
+    sensor_msgs::PointCloud2 cloud_SIM = ROSVisualizerHelper::get_ros_pointcloud(feats_sim);
+    pub_points_sim.publish(cloud_SIM);
 }
 
-void ROS1Visualizer::publish_groundtruth() {
 
-  // Our groundtruth state
-  Eigen::Matrix<double, 17, 1> state_gt;
 
-  // We want to publish in the IMU clock frame
-  // The timestamp in the state will be the last camera time
-  double t_ItoC = _app->get_state()->_calib_dt_CAMtoIMU->value()(0);
-  double timestamp_inI = _app->get_state()->_timestamp + t_ItoC;
+void ROS1Visualizer::publish_groundtruth() 
+{
+    // Our groundtruth state
+    Eigen::Matrix<double, 17, 1> state_gt;
 
-  // Check that we have the timestamp in our GT file [time(sec),q_GtoI,p_IinG,v_IinG,b_gyro,b_accel]
-  if (_sim == nullptr && (gt_states.empty() || !DatasetReader::get_gt_state(timestamp_inI, state_gt, gt_states))) {
-    return;
-  }
+    // We want to publish in the IMU clock frame
+    // The timestamp in the state will be the last camera time
+    double t_ItoC = _app->get_state()->_calib_dt_CAMtoIMU->value()(0);
+    double timestamp_inI = _app->get_state()->_timestamp + t_ItoC;
 
-  // Get the simulated groundtruth
-  // NOTE: we get the true time in the IMU clock frame
-  if (_sim != nullptr) {
-    timestamp_inI = _app->get_state()->_timestamp + _sim->get_true_parameters().calib_camimu_dt;
-    if (!_sim->get_state(timestamp_inI, state_gt))
-      return;
-  }
+    // Check that we have the timestamp in our GT file [time(sec),q_GtoI,p_IinG,v_IinG,b_gyro,b_accel]
+    if (_sim == nullptr && (gt_states.empty() || !DatasetReader::get_gt_state(timestamp_inI, state_gt, gt_states))) {
+        return;
+    }
 
-  // Get the GT and system state state
-  Eigen::Matrix<double, 16, 1> state_ekf = _app->get_state()->_imu->value();
+    // Get the simulated groundtruth
+    // NOTE: we get the true time in the IMU clock frame
+    if (_sim != nullptr) {
+        timestamp_inI = _app->get_state()->_timestamp + _sim->get_true_parameters().calib_camimu_dt;
+        if (!_sim->get_state(timestamp_inI, state_gt))
+        return;
+    }
 
-  // Create pose of IMU
-  geometry_msgs::PoseStamped poseIinM;
-  poseIinM.header.stamp = ros::Time(timestamp_inI);
-  poseIinM.header.seq = poses_seq_gt;
-  poseIinM.header.frame_id = "global";
-  poseIinM.pose.orientation.x = state_gt(1, 0);
-  poseIinM.pose.orientation.y = state_gt(2, 0);
-  poseIinM.pose.orientation.z = state_gt(3, 0);
-  poseIinM.pose.orientation.w = state_gt(4, 0);
-  poseIinM.pose.position.x = state_gt(5, 0);
-  poseIinM.pose.position.y = state_gt(6, 0);
-  poseIinM.pose.position.z = state_gt(7, 0);
-  pub_posegt.publish(poseIinM);
+    // Get the GT and system state state
+    Eigen::Matrix<double, 16, 1> state_ekf = _app->get_state()->_imu->value();
 
-  // Append to our pose vector
-  poses_gt.push_back(poseIinM);
+    // Create pose of IMU
+    geometry_msgs::PoseStamped poseIinM;
+    poseIinM.header.stamp = ros::Time(timestamp_inI);
+    poseIinM.header.seq = poses_seq_gt;
+    poseIinM.header.frame_id = "global";
+    poseIinM.pose.orientation.x = state_gt(1, 0);
+    poseIinM.pose.orientation.y = state_gt(2, 0);
+    poseIinM.pose.orientation.z = state_gt(3, 0);
+    poseIinM.pose.orientation.w = state_gt(4, 0);
+    poseIinM.pose.position.x = state_gt(5, 0);
+    poseIinM.pose.position.y = state_gt(6, 0);
+    poseIinM.pose.position.z = state_gt(7, 0);
+    pub_posegt.publish(poseIinM);
 
-  // Create our path (imu)
-  // NOTE: We downsample the number of poses as needed to prevent rviz crashes
-  // NOTE: https://github.com/ros-visualization/rviz/issues/1107
-  nav_msgs::Path arrIMU;
-  arrIMU.header.stamp = ros::Time::now();
-  arrIMU.header.seq = poses_seq_gt;
-  arrIMU.header.frame_id = "global";
-  for (size_t i = 0; i < poses_gt.size(); i += std::floor((double)poses_gt.size() / 16384.0) + 1) {
-    arrIMU.poses.push_back(poses_gt.at(i));
-  }
-  pub_pathgt.publish(arrIMU);
+    // Append to our pose vector
+    poses_gt.push_back(poseIinM);
 
-  // Move them forward in time
-  poses_seq_gt++;
+    // Create our path (imu)
+    // NOTE: We downsample the number of poses as needed to prevent rviz crashes
+    // NOTE: https://github.com/ros-visualization/rviz/issues/1107
+    nav_msgs::Path arrIMU;
+    arrIMU.header.stamp = ros::Time::now();
+    arrIMU.header.seq = poses_seq_gt;
+    arrIMU.header.frame_id = "global";
+    for (size_t i = 0; i < poses_gt.size(); i += std::floor((double)poses_gt.size() / 16384.0) + 1) {
+        arrIMU.poses.push_back(poses_gt.at(i));
+    }
+    pub_pathgt.publish(arrIMU);
 
-  // Publish our transform on TF
-  tf::StampedTransform trans;
-  trans.stamp_ = ros::Time::now();
-  trans.frame_id_ = "global";
-  trans.child_frame_id_ = "truth";
-  tf::Quaternion quat(state_gt(1, 0), state_gt(2, 0), state_gt(3, 0), state_gt(4, 0));
-  trans.setRotation(quat);
-  tf::Vector3 orig(state_gt(5, 0), state_gt(6, 0), state_gt(7, 0));
-  trans.setOrigin(orig);
-  if (publish_global2imu_tf) {
-    mTfBr->sendTransform(trans);
-  }
+    // Move them forward in time
+    poses_seq_gt++;
 
-  //==========================================================================
-  //==========================================================================
+    // Publish our transform on TF
+    tf::StampedTransform trans;
+    trans.stamp_ = ros::Time::now();
+    trans.frame_id_ = "global";
+    trans.child_frame_id_ = "truth";
+    tf::Quaternion quat(state_gt(1, 0), state_gt(2, 0), state_gt(3, 0), state_gt(4, 0));
+    trans.setRotation(quat);
+    tf::Vector3 orig(state_gt(5, 0), state_gt(6, 0), state_gt(7, 0));
+    trans.setOrigin(orig);
+    if (publish_global2imu_tf) {
+        mTfBr->sendTransform(trans);
+    }
 
-  // Difference between positions
-  double dx = state_ekf(4, 0) - state_gt(5, 0);
-  double dy = state_ekf(5, 0) - state_gt(6, 0);
-  double dz = state_ekf(6, 0) - state_gt(7, 0);
-  double err_pos = std::sqrt(dx * dx + dy * dy + dz * dz);
+    //==========================================================================
+    //==========================================================================
 
-  // Quaternion error
-  Eigen::Matrix<double, 4, 1> quat_gt, quat_st, quat_diff;
-  quat_gt << state_gt(1, 0), state_gt(2, 0), state_gt(3, 0), state_gt(4, 0);
-  quat_st << state_ekf(0, 0), state_ekf(1, 0), state_ekf(2, 0), state_ekf(3, 0);
-  quat_diff = quat_multiply(quat_st, Inv(quat_gt));
-  double err_ori = (180 / M_PI) * 2 * quat_diff.block(0, 0, 3, 1).norm();
+    // Difference between positions
+    double dx = state_ekf(4, 0) - state_gt(5, 0);
+    double dy = state_ekf(5, 0) - state_gt(6, 0);
+    double dz = state_ekf(6, 0) - state_gt(7, 0);
+    double err_pos = std::sqrt(dx * dx + dy * dy + dz * dz);
 
-  //==========================================================================
-  //==========================================================================
+    // Quaternion error
+    Eigen::Matrix<double, 4, 1> quat_gt, quat_st, quat_diff;
+    quat_gt << state_gt(1, 0), state_gt(2, 0), state_gt(3, 0), state_gt(4, 0);
+    quat_st << state_ekf(0, 0), state_ekf(1, 0), state_ekf(2, 0), state_ekf(3, 0);
+    quat_diff = quat_multiply(quat_st, Inv(quat_gt));
+    double err_ori = (180 / M_PI) * 2 * quat_diff.block(0, 0, 3, 1).norm();
 
-  // Get covariance of pose
-  std::vector<std::shared_ptr<Type>> statevars;
-  statevars.push_back(_app->get_state()->_imu->q());
-  statevars.push_back(_app->get_state()->_imu->p());
-  Eigen::Matrix<double, 6, 6> covariance = StateHelper::get_marginal_covariance(_app->get_state(), statevars);
+    //==========================================================================
+    //==========================================================================
 
-  // Calculate NEES values
-  // NOTE: need to manually multiply things out to make static asserts work
-  // NOTE: https://github.com/rpng/open_vins/pull/226
-  // NOTE: https://github.com/rpng/open_vins/issues/236
-  // NOTE: https://gitlab.com/libeigen/eigen/-/issues/1664
-  Eigen::Vector3d quat_diff_vec = quat_diff.block(0, 0, 3, 1);
-  Eigen::Vector3d cov_vec = covariance.block(0, 0, 3, 3).inverse() * 2 * quat_diff.block(0, 0, 3, 1);
-  double ori_nees = 2 * quat_diff_vec.dot(cov_vec);
-  Eigen::Vector3d errpos = state_ekf.block(4, 0, 3, 1) - state_gt.block(5, 0, 3, 1);
-  double pos_nees = errpos.transpose() * covariance.block(3, 3, 3, 3).inverse() * errpos;
+    // Get covariance of pose
+    std::vector<std::shared_ptr<Type>> statevars;
+    statevars.push_back(_app->get_state()->_imu->q());
+    statevars.push_back(_app->get_state()->_imu->p());
+    Eigen::Matrix<double, 6, 6> covariance = StateHelper::get_marginal_covariance(_app->get_state(), statevars);
 
-  //==========================================================================
-  //==========================================================================
+    // Calculate NEES values
+    // NOTE: need to manually multiply things out to make static asserts work
+    // NOTE: https://github.com/rpng/open_vins/pull/226
+    // NOTE: https://github.com/rpng/open_vins/issues/236
+    // NOTE: https://gitlab.com/libeigen/eigen/-/issues/1664
+    Eigen::Vector3d quat_diff_vec = quat_diff.block(0, 0, 3, 1);
+    Eigen::Vector3d cov_vec = covariance.block(0, 0, 3, 3).inverse() * 2 * quat_diff.block(0, 0, 3, 1);
+    double ori_nees = 2 * quat_diff_vec.dot(cov_vec);
+    Eigen::Vector3d errpos = state_ekf.block(4, 0, 3, 1) - state_gt.block(5, 0, 3, 1);
+    double pos_nees = errpos.transpose() * covariance.block(3, 3, 3, 3).inverse() * errpos;
 
-  // Update our average variables
-  if (!std::isnan(ori_nees) && !std::isnan(pos_nees)) {
-    summed_mse_ori += err_ori * err_ori;
-    summed_mse_pos += err_pos * err_pos;
-    summed_nees_ori += ori_nees;
-    summed_nees_pos += pos_nees;
-    summed_number++;
-  }
+    //==========================================================================
+    //==========================================================================
 
-  // Nice display for the user
-  PRINT_INFO(REDPURPLE "error to gt => %.3f, %.3f (deg,m) | rmse => %.3f, %.3f (deg,m) | called %d times\n" RESET, err_ori, err_pos,
-             std::sqrt(summed_mse_ori / summed_number), std::sqrt(summed_mse_pos / summed_number), (int)summed_number);
-  PRINT_INFO(REDPURPLE "nees => %.1f, %.1f (ori,pos) | avg nees = %.1f, %.1f (ori,pos)\n" RESET, ori_nees, pos_nees,
-             summed_nees_ori / summed_number, summed_nees_pos / summed_number);
+    // Update our average variables
+    if (!std::isnan(ori_nees) && !std::isnan(pos_nees)) {
+        summed_mse_ori += err_ori * err_ori;
+        summed_mse_pos += err_pos * err_pos;
+        summed_nees_ori += ori_nees;
+        summed_nees_pos += pos_nees;
+        summed_number++;
+    }
 
-  //==========================================================================
-  //==========================================================================
+    // Nice display for the user
+    PRINT_INFO(REDPURPLE "error to gt => %.3f, %.3f (deg,m) | rmse => %.3f, %.3f (deg,m) | called %d times\n" RESET, err_ori, err_pos,
+                std::sqrt(summed_mse_ori / summed_number), std::sqrt(summed_mse_pos / summed_number), (int)summed_number);
+    PRINT_INFO(REDPURPLE "nees => %.1f, %.1f (ori,pos) | avg nees = %.1f, %.1f (ori,pos)\n" RESET, ori_nees, pos_nees,
+                summed_nees_ori / summed_number, summed_nees_pos / summed_number);
+
+    //==========================================================================
+    //==========================================================================
 }
+
+
 
 void ROS1Visualizer::publish_loopclosure_information() {
 

@@ -46,28 +46,33 @@ InertialInitializer::InertialInitializer(InertialInitializerOptions &params_, st
   init_dynamic = std::make_shared<DynamicInitializer>(params, _db, imu_data);
 }
 
-void InertialInitializer::feed_imu(const ov_core::ImuData &message, double oldest_time) {
 
-  // Append it to our vector
-  imu_data->emplace_back(message);
 
-  // Sort our imu data (handles any out of order measurements)
-  // std::sort(imu_data->begin(), imu_data->end(), [](const IMUDATA i, const IMUDATA j) {
-  //    return i.timestamp < j.timestamp;
-  //});
+void InertialInitializer::feed_imu(const ov_core::ImuData &message, double oldest_time) 
+{
+    // Append it to our vector
+    imu_data->emplace_back(message);
 
-  // Loop through and delete imu messages that are older than our requested time
-  // std::cout << "INIT: imu_data.size() " << imu_data->size() << std::endl;
-  if (oldest_time != -1) {
-    auto it0 = imu_data->begin();
-    while (it0 != imu_data->end()) {
-      if (message.timestamp < oldest_time) {
-        it0 = imu_data->erase(it0);
-      } else {
-        it0++;
-      }
+    // Sort our imu data (handles any out of order measurements)
+    // std::sort(imu_data->begin(), imu_data->end(), [](const IMUDATA i, const IMUDATA j) {
+    //    return i.timestamp < j.timestamp;
+    //});
+
+    // Loop through and delete imu messages that are older than our requested time
+    // std::cout << "INIT: imu_data.size() " << imu_data->size() << std::endl;
+    if (oldest_time != -1) 
+    {
+        auto it0 = imu_data->begin();
+        while (it0 != imu_data->end()) 
+        {
+            if (message.timestamp < oldest_time) {
+                it0 = imu_data->erase(it0);
+            } 
+            else {
+                it0++;
+            }
+        }
     }
-  }
 }
 
 bool InertialInitializer::initialize(double &timestamp, Eigen::MatrixXd &covariance, std::vector<std::shared_ptr<ov_type::Type>> &order,

@@ -402,8 +402,14 @@ struct VioManagerOptions {
   /// If should extract aruco tags and estimate them
   bool use_aruco = true;
 
+  /// If should extract april tags and estimate them
+  bool use_april = true;
+
   /// Will half the resolution of the aruco tag image (will be faster)
   bool downsize_aruco = true;
+
+  /// Will half the resolution of the april tag image (will be faster)
+  bool downsize_april = true;
 
   /// Will half the resolution all tracking image (aruco will be 1/4 instead of halved if dowsize_aruoc also enabled)
   bool downsample_cameras = false;

@@ -191,6 +191,9 @@ protected:
   /// Our aruoc tracker
   std::shared_ptr<ov_core::TrackBase> trackARUCO;
 
+  /// Our april tracker
+  std::shared_ptr<ov_core::TrackBase> trackAPRIL;
+
   /// State initializer
   std::shared_ptr<ov_init::InertialInitializer> initializer;
 

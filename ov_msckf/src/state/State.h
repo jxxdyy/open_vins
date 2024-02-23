@@ -63,15 +63,16 @@ public:
    * But if you wanted to do a keyframe system, you could selectively marginalize clones.
    * @return timestep of clone we will marginalize
    */
-  double margtimestep() {
-    std::lock_guard<std::mutex> lock(_mutex_state);
-    double time = INFINITY;
-    for (const auto &clone_imu : _clones_IMU) {
-      if (clone_imu.first < time) {
-        time = clone_imu.first;
+  double margtimestep() 
+  {
+      std::lock_guard<std::mutex> lock(_mutex_state);
+      double time = INFINITY;
+      for (const auto &clone_imu : _clones_IMU) {
+        if (clone_imu.first < time) {
+          time = clone_imu.first;
+        }
       }
-    }
-    return time;
+      return time;
   }
 
   /**
